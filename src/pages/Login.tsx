@@ -144,47 +144,6 @@ export default function Login() {
           </div>
         </form>
 
-        <div className="relative flex items-center justify-center my-4">
-          <div className="absolute inset-y-0 left-0 w-full border-t border-black/10 dark:border-[#4B4B4B]"></div>
-          <span className="relative px-3 text-xs uppercase bg-emerald-50 dark:bg-[#2E2E2E] dark:text-[#7D7D7D] tracking-wider text-[#444D60]/80">
-            or
-          </span>
-        </div>
-
-        <div>
-          <button
-            onClick={handleGoogleLogin}
-            disabled={googleLoading}
-            className="w-full flex items-center justify-center gap-3 py-3 px-4 border border-black/10 dark:border-[#4B4B4B] rounded-xl bg-white hover:bg-zinc-100 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-sm font-semibold text-[#444D60] dark:text-white transition"
-          >
-            {googleLoading ? (
-              <Loader2 className="animate-spin h-5 w-5" />
-            ) : (
-              <>
-                <svg className="h-5 w-5" viewBox="0 0 24 24" width="24" height="24">
-                  <path
-                    fill="#EA4335"
-                    d="M5.266 9.765A7.077 7.077 0 0 1 12 4.909c1.69 0 3.218.6 4.418 1.582L19.91 3C17.782 1.145 15.055 0 12 0 7.37 0 3.34 2.62 1.25 6.463l4.016 3.302Z"
-                  />
-                  <path
-                    fill="#4285F4"
-                    d="M23.045 12.273c0-.818-.073-1.609-.205-2.373H12v4.482h6.218a5.31 5.31 0 0 1-2.3 3.483l3.582 2.772c2.09-1.927 3.545-4.76 3.545-8.364Z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M5.266 14.235 1.25 17.537C3.34 21.38 7.37 24 12 24c3.155 0 6.136-1.118 8.218-3l-3.582-2.772c-1.218.818-2.773 1.309-4.636 1.309a7.078 7.078 0 0 1-6.734-4.855l-4.016 3.302Z"
-                  />
-                  <path
-                    fill="#34A853"
-                    d="M12 19.545c-3.11 0-5.782-2.073-6.734-4.855L1.25 17.99C3.34 21.83 7.37 24.45 12 24.45v-4.909Z"
-                  />
-                </svg>
-                <span>Continue with Google</span>
-              </>
-            )}
-          </button>
-        </div>
-
         <p className="text-center text-sm text-[#444D60]/80 dark:text-dark-text-muted mt-4">
           Don't have an account?{' '}
           <Link
