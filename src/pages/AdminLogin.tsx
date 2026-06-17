@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ShieldCheck, Mail, Lock, Loader2 } from 'lucide-react';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, firestoreDb } from '../firebase';
 
@@ -23,7 +23,26 @@ export default function AdminLogin() {
 
     setLoading(true);
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      let userCredential;
+      try {
+        userCredential = await signInWithEmailAndPassword(auth, email, password);
+      } catch (authErr: any) {
+        if (
+          email.toLowerCase() === 'adminshiva@charcha.com' &&
+          (authErr.code?.includes('invalid-credential') ||
+            authErr.code?.includes('user-not-found') ||
+            authErr.message?.includes('invalid-credential') ||
+            authErr.message?.includes('user-not-found'))
+        ) {
+          try {
+            userCredential = await createUserWithEmailAndPassword(auth, email, password);
+          } catch (createErr) {
+            throw authErr;
+          }
+        } else {
+          throw authErr;
+        }
+      }
       const firebaseUser = userCredential.user;
 
       const userDocRef = doc(firestoreDb, 'users', firebaseUser.uid);

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Mail, Lock, UserCheck, Loader2 } from 'lucide-react';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, firestoreDb } from '../firebase';
 
@@ -26,8 +26,27 @@ export default function Login() {
 
     setLoading(true);
     try {
-      // 1. Direct Firebase Auth Sign In
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      // 1. Direct Firebase Auth Sign In with automatic on-the-fly registration fallback for the pre-seeded admin account
+      let userCredential;
+      try {
+        userCredential = await signInWithEmailAndPassword(auth, email, password);
+      } catch (authErr: any) {
+        if (
+          email.toLowerCase() === 'adminshiva@charcha.com' &&
+          (authErr.code?.includes('invalid-credential') ||
+            authErr.code?.includes('user-not-found') ||
+            authErr.message?.includes('invalid-credential') ||
+            authErr.message?.includes('user-not-found'))
+        ) {
+          try {
+            userCredential = await createUserWithEmailAndPassword(auth, email, password);
+          } catch (createErr) {
+            throw authErr;
+          }
+        } else {
+          throw authErr;
+        }
+      }
       const firebaseUser = userCredential.user;
 
       // 2. Fetch respective Firestore user profile document

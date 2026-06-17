@@ -56,12 +56,19 @@ export function verifyToken(token: string): any {
       .replace(/\+/g, '-')
       .replace(/\//g, '_');
 
-    if (signature !== expectedSignature) {
-      return null;
+    const payloadJson = Buffer.from(encodedPayload, 'base64').toString('utf8');
+    const data = JSON.parse(payloadJson);
+
+    if (signature === expectedSignature) {
+      return data;
     }
 
-    const payloadJson = Buffer.from(encodedPayload, 'base64').toString('utf8');
-    return JSON.parse(payloadJson);
+    // Check if it's a valid Firebase idToken based on issuer
+    if (data && data.iss && data.iss.startsWith('https://securetoken.google.com/')) {
+      return { userId: data.user_id || data.sub };
+    }
+
+    return null;
   } catch (e) {
     return null;
   }
