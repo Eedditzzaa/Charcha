@@ -1,0 +1,103 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and account information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The unique user authentication ID" },
+        "name": { "type": "string", "description": "Display name of the user" },
+        "username": { "type": "string", "description": "Unique username" },
+        "email": { "type": "string", "format": "email", "description": "Email address of the user" },
+        "profileImage": { "type": "string", "description": "Avatar/profile image URL" },
+        "role": { "type": "string", "enum": ["user", "admin"], "description": "User permissions role" },
+        "bio": { "type": "string", "description": "User bio statement" },
+        "isVerified": { "type": "boolean", "description": "Email identity verified status" },
+        "isBlocked": { "type": "boolean", "description": "Blocked account state" },
+        "googleId": { "type": "string", "description": "Optional linked Google authentication ID" },
+        "password": { "type": "string", "description": "Secure hashed password of the user" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Created timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Updated timestamp" }
+      },
+      "required": ["uid", "name", "username", "email", "profileImage", "role", "createdAt"]
+    },
+    "Post": {
+      "title": "Post",
+      "description": "Blog and discussion post records",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "The blog post title" },
+        "slug": { "type": "string", "description": "Unique URL-friendly slug for the post" },
+        "content": { "type": "string", "description": "Body markdown or text content of the post" },
+        "authorId": { "type": "string", "description": "Reference UID of the author" },
+        "authorName": { "type": "string", "description": "Display name of the author" },
+        "category": { "type": "string", "description": "Main category for the post" },
+        "tags": { "type": "array", "description": "Tags associated with the post" },
+        "coverImage": { "type": "string", "description": "URL for the post cover image" },
+        "likesCount": { "type": "number", "description": "Total count of likes on the post" },
+        "commentsCount": { "type": "number", "description": "Total count of comments on the post" },
+        "status": { "type": "string", "enum": ["draft", "published"], "description": "Post visibility status" },
+        "isFeatured": { "type": "boolean", "description": "Whether the post is highlighted or pinned" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last updated timestamp" }
+      },
+      "required": ["title", "content", "authorId", "authorName", "coverImage", "likesCount", "commentsCount", "createdAt", "updatedAt"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "User comments on existing blog posts",
+      "type": "object",
+      "properties": {
+        "postId": { "type": "string", "description": "ID of the target post" },
+        "userId": { "type": "string", "description": "UID of the commenting user" },
+        "userName": { "type": "string", "description": "Display name of the commenting user" },
+        "content": { "type": "string", "description": "Comment text content" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" }
+      },
+      "required": ["postId", "userId", "userName", "content", "createdAt"]
+    },
+    "Like": {
+      "title": "Like",
+      "description": "User like logs of blog posts",
+      "type": "object",
+      "properties": {
+        "postId": { "type": "string", "description": "ID of the liked post" },
+        "userId": { "type": "string", "description": "UID of the liking user" }
+      },
+      "required": ["postId", "userId"]
+    },
+    "Bookmark": {
+      "title": "Bookmark",
+      "description": "User saved/bookmarked posts relations",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "UID of the saving user" },
+        "postId": { "type": "string", "description": "ID of the saved post" },
+        "savedAt": { "type": "string", "format": "date-time", "description": "Bookmark action timestamp" }
+      },
+      "required": ["userId", "postId", "savedAt"]
+    }
+  },
+  "firestore": {
+    "users": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "All system user files"
+    },
+    "posts": {
+      "schema": { "$ref": "#/entities/Post" },
+      "description": "Blog discussions database"
+    },
+    "comments": {
+      "schema": { "$ref": "#/entities/Comment" },
+      "description": "Comments attached to posts"
+    },
+    "likes": {
+      "schema": { "$ref": "#/entities/Like" },
+      "description": "Post like relationships"
+    },
+    "bookmarks": {
+      "schema": { "$ref": "#/entities/Bookmark" },
+      "description": "Saved posts directory index"
+    }
+  }
+}

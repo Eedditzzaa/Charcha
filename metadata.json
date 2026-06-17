@@ -1,0 +1,6 @@
+{
+  "name": "Charcha",
+  "description": "A modern community blogging platform where users can discuss and share ideas.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
