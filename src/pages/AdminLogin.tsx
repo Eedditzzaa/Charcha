@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ShieldCheck, Mail, Lock, Loader2 } from 'lucide-react';
-import axios from 'axios';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, firestoreDb } from '../firebase';
 
 export default function AdminLogin() {
   const { login, showToast } = useAuth();
@@ -21,13 +23,48 @@ export default function AdminLogin() {
 
     setLoading(true);
     try {
-      const res = await axios.post('/api/auth/admin-login', { email, password });
-      login(res.data.token, res.data.user);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const firebaseUser = userCredential.user;
+
+      const userDocRef = doc(firestoreDb, 'users', firebaseUser.uid);
+      const userDocSnap = await getDoc(userDocRef);
+
+      let userProfile: any = null;
+      if (userDocSnap.exists()) {
+        userProfile = { _id: firebaseUser.uid, ...userDocSnap.data() };
+      } else {
+        const emailUsername = email.toLowerCase().split('@')[0];
+        userProfile = {
+          _id: firebaseUser.uid,
+          uid: firebaseUser.uid,
+          name: firebaseUser.displayName || emailUsername,
+          username: emailUsername,
+          email: email.toLowerCase(),
+          avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(email)}`,
+          profileImage: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(email)}`,
+          bio: 'New Charcha member!',
+          role: email.toLowerCase() === 'adminshiva@charcha.com' ? 'admin' : 'user',
+          googleId: null,
+          isVerified: true,
+          isBlocked: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        await setDoc(userDocRef, userProfile);
+      }
+
+      if (userProfile.role !== 'admin') {
+        await auth.signOut();
+        showToast('Access denied. You do not have administrator permissions.', 'error');
+        return;
+      }
+
+      const idToken = await firebaseUser.getIdToken();
+      login(idToken, userProfile);
       showToast('Admin pre-authentication verified. Welcome to Charcha System Control!', 'success');
       navigate('/admin');
     } catch (err: any) {
-      const msg = err.response?.data?.message || 'Admin login failed. Please check credentials.';
-      showToast(msg, 'error');
+      showToast(err.message || 'Admin login failed. Please check credentials.', 'error');
     } finally {
       setLoading(false);
     }

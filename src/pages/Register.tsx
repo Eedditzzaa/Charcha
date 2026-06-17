@@ -1,39 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import React, { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { User, Mail, Lock, ShieldCheck, Loader2 } from 'lucide-react';
-import axios from 'axios';
+import { User, Mail, Lock, Loader2 } from 'lucide-react';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { doc, setDoc } from 'firebase/firestore';
+import { auth, firestoreDb } from '../firebase';
 
 export default function Register() {
   const { login, showToast } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
-
-  // Navigation context checks
-  const queryParams = new URLSearchParams(location.search);
-  const initialVerifyState = queryParams.get('verify') === 'true';
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-
-  // Verification Screen State
-  const [verificationPending, setVerificationPending] = useState(initialVerifyState);
-  const [otpCode, setOtpCode] = useState('');
-  const [verifying, setVerifying] = useState(false);
-  const [debugOtpCode, setDebugOtpCode] = useState<string | null>(null);
-  const [smtpDiagnostics, setSmtpDiagnostics] = useState<{
-    configured: boolean;
-    failed: boolean;
-    errorMessage: string;
-  } | null>(null);
-
-  useEffect(() => {
-    if (initialVerifyState) {
-      setVerificationPending(true);
-    }
-  }, [initialVerifyState]);
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,139 +24,47 @@ export default function Register() {
 
     setLoading(true);
     try {
-      const res = await axios.post('/api/auth/register', { name, email, password });
-      
-      if (res.data.debugCode) {
-        setDebugOtpCode(res.data.debugCode);
-      }
-      if (res.data.smtpConfigured !== undefined) {
-        setSmtpDiagnostics({
-          configured: res.data.smtpConfigured,
-          failed: res.data.smtpFailed,
-          errorMessage: res.data.smtpErrorMsg || '',
-        });
-      }
+      // 1. Create firebase user using client-side SDK
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const firebaseUser = userCredential.user;
 
-      // Complete registration only after correct OTP is entered (do not login yet)
-      setVerificationPending(true);
-      if (res.data.smtpFailed) {
-        showToast('Account registered, but SMTP email delivery failed. See diagnostic notice.', 'warning');
-      } else {
-        showToast('Account registered! A verification code has been sent to your email.', 'success');
-      }
+      const emailUsername = email.toLowerCase().split('@')[0];
+      const nextId = firebaseUser.uid;
+
+      // 2. Prepare user profile matched fields
+      const newUserProfile = {
+        _id: nextId,
+        uid: nextId,
+        name: name,
+        username: emailUsername,
+        email: email.toLowerCase(),
+        avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}`,
+        profileImage: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}`,
+        bio: 'New Charcha member!',
+        role: email.toLowerCase() === 'adminshiva@charcha.com' ? 'admin' : 'user',
+        googleId: null,
+        isVerified: true,
+        isBlocked: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      // 3. Document write directly to Firestore users collection
+      await setDoc(doc(firestoreDb, 'users', nextId), newUserProfile);
+
+      // 4. Retrieve client auth token
+      const idToken = await firebaseUser.getIdToken();
+
+      // 5. Trigger AuthContext login
+      login(idToken, newUserProfile as any);
+      showToast('Registration successful! Welcome to Charcha.', 'success');
+      navigate('/');
     } catch (err: any) {
-      const msg = err.response?.data?.message || 'Registration failed. Try again.';
-      showToast(msg, 'error');
+      showToast(err.message || 'Registration failed. Try again.', 'error');
     } finally {
       setLoading(false);
     }
   };
-
-  const handleVerifyOTP = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!otpCode) {
-      showToast('Please enter the 6-digit verification code.', 'error');
-      return;
-    }
-
-    setVerifying(true);
-    try {
-      // Pass both email and code since user is not logged in yet
-      const res = await axios.post('/api/auth/verify-email', { email, code: otpCode });
-      showToast('Email verified successfully! Profile activated.', 'success');
-      
-      // Auto-save user credentials to local token context now
-      login(res.data.token, res.data.user);
-      
-      navigate('/');
-      window.location.reload(); // Hard reload context to update navbar states
-    } catch (err: any) {
-      showToast(err.response?.data?.message || 'Invalid or expired verification code.', 'error');
-    } finally {
-      setVerifying(false);
-    }
-  };
-
-  if (verificationPending) {
-    return (
-      <div className="min-h-[75vh] flex items-center justify-center py-12 px-4 bg-light-bg dark:bg-black transition-colors duration-300">
-        <div className="max-w-md w-full space-y-6 bg-[#A0D2EB]/40 dark:bg-[#2E2E2E]/80 border border-black/5 dark:border-[#4B4B4B] p-8 rounded-3xl backdrop-blur-md shadow-xl">
-          <div className="text-center">
-            <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-500/10 text-charcha-purple mb-4">
-              <ShieldCheck className="h-8 w-8" />
-            </div>
-            <h2 className="text-2xl font-serif font-bold text-[#444D60] dark:text-white">
-              Verify your Email
-            </h2>
-            <p className="mt-2 text-sm text-[#444D60]/80 dark:text-dark-text-muted px-4">
-              We have sent a real 6-digit verification code to <strong className="text-charcha-purple dark:text-charcha-lavender">{email}</strong>. Please check your inbox (and spam folder) and enter it below to activate your account.
-            </p>
-          </div>
-
-          {/* SMTP Diagnostic Falling-back Banner */}
-          {smtpDiagnostics && smtpDiagnostics.failed && (
-            <div className="p-4 bg-orange-500/10 dark:bg-orange-500/20 border border-orange-500/30 text-[#444D60] dark:text-orange-200 rounded-2xl text-xs space-y-2 font-sans text-left">
-              <span className="font-bold text-orange-600 dark:text-orange-400 block font-mono uppercase tracking-wide">⚠️ SMTP Delivery Interrupted</span>
-              <p className="leading-relaxed text-[11px]">
-                The application attempted to send a real email using Gmail SMTP, but transport failed. 
-                <span className="font-mono bg-black/10 dark:bg-white/10 px-1 py-0.5 rounded ml-1">Reason: {smtpDiagnostics.errorMessage}</span>
-              </p>
-              <div className="pt-2 border-t border-orange-500/20 text-center font-semibold">
-                <p className="mb-1 text-[10px] text-[#444D60]/70 dark:text-orange-300 font-mono">DEVELOPMENT FALLBACK CODE:</p>
-                <span className="font-mono text-xl tracking-widest text-charcha-purple dark:text-white underline">{debugOtpCode}</span>
-              </div>
-            </div>
-          )}
-
-          {smtpDiagnostics && !smtpDiagnostics.configured && (
-            <div className="p-4 bg-indigo-500/5 dark:bg-indigo-500/15 border border-indigo-500/20 text-[#444D60] dark:text-[#A0D2EB] rounded-2xl text-xs space-y-2 font-sans text-left">
-              <span className="font-bold text-charcha-purple dark:text-charcha-lavender block font-mono uppercase tracking-wide">ℹ️ Simulating Email Delivery</span>
-              <p className="leading-relaxed text-[11px]">
-                Since Gmail SMTP credentials are not configured in your Environment / Secrets panel yet, the system is in Sandbox Simulation mode.
-              </p>
-              <div className="pt-2 border-t border-indigo-500/15 text-center font-semibold">
-                <p className="mb-1 text-[10px] text-[#444D60]/70 dark:text-charcha-lavender font-mono">ACTIVE VERIFICATION CODE:</p>
-                <span className="font-mono text-xl tracking-widest text-[#9D6DD6] dark:text-white underline">{debugOtpCode}</span>
-              </div>
-            </div>
-          )}
-
-          <form className="mt-4 space-y-6" onSubmit={handleVerifyOTP}>
-            <div>
-              <label className="block text-xs font-mono uppercase tracking-wider text-[#444D60]/80 dark:text-dark-text-muted text-center font-bold mb-3">
-                6-Digit Code
-              </label>
-              <input
-                type="text"
-                required
-                maxLength={6}
-                value={otpCode}
-                onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
-                placeholder="000000"
-                className="w-full text-center tracking-widest text-2xl font-mono py-3 rounded-xl border border-black/10 dark:border-[#4B4B4B] bg-white/60 dark:bg-black/40 text-[#444D60] dark:text-white focus:outline-none focus:ring-2 focus:ring-charcha-purple"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={verifying}
-              className="w-full py-3 px-4 rounded-xl text-white bg-charcha-purple hover:bg-[#865bc1] font-semibold text-sm transition flex justify-center items-center disabled:opacity-50"
-            >
-              {verifying ? (
-                <Loader2 className="animate-spin h-5 w-5" />
-              ) : (
-                'Verify & Activate Profile'
-              )}
-            </button>
-          </form>
-
-          <p className="text-center text-xs text-[#444D60]/60 dark:text-[#7D7D7D]">
-            Did not receive a code? Try restarting registration.
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-[75vh] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 bg-light-bg dark:bg-black transition-colors duration-300">

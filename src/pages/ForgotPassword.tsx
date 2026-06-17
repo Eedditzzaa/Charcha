@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Mail, ArrowLeft, Loader2 } from 'lucide-react';
-import axios from 'axios';
+import { sendPasswordResetEmail } from 'firebase/auth';
+import { auth } from '../firebase';
 
 export default function ForgotPassword() {
   const { showToast } = useAuth();
@@ -20,14 +21,11 @@ export default function ForgotPassword() {
 
     setLoading(true);
     try {
-      const res = await axios.post('/api/auth/forgot-password', { email });
-      showToast('A recovery code has been generated.', 'success');
-      
-      // Navigate to Reset Password page, sending code as parameter for sandbox convenience!
-      const code = res.data.debugCode ? `&code=${res.data.debugCode}` : '';
-      navigate(`/reset-password?email=${encodeURIComponent(email)}${code}`);
+      await sendPasswordResetEmail(auth, email);
+      showToast('A secure password reset link has been sent to your email directly from Firebase.', 'success');
+      navigate('/login');
     } catch (err: any) {
-      showToast(err.response?.data?.message || 'Error executing forgot password request.', 'error');
+      showToast(err.message || 'Error executing forgot password request.', 'error');
     } finally {
       setLoading(false);
     }
@@ -46,7 +44,7 @@ export default function ForgotPassword() {
             Reset Password
           </h2>
           <p className="mt-1 text-sm text-[#444D60]/80 dark:text-dark-text-muted">
-            Enter your email to receive a password reset verification code.
+            Enter your email to receive a password reset link.
           </p>
         </div>
 

@@ -4,7 +4,6 @@ import {
   setDoc, updateDoc, deleteDoc, limit
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
-import crypto from 'crypto';
 
 // Initialize Firebase Core & Firestore connection
 const app = initializeApp(firebaseConfig);
@@ -138,7 +137,7 @@ class Database {
       email: 'adminshiva@charcha.com',
       avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop',
       profileImage: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop',
-      password: crypto.createHash('sha256').update('Shiva@123').digest('hex'),
+      password: 'ef797c8118f02dfb649607dd5d3f8c7623048c9c063d532cc95c5ed7a898a64f',
       bio: 'Lead Developer and Founder of Charcha. Passionate about community building.',
       role: 'admin',
       googleId: null,
@@ -155,7 +154,7 @@ class Database {
       email: 'adminshiva@charcha.com',
       avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop',
       profileImage: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop',
-      password: crypto.createHash('sha256').update('Shiva@123').digest('hex'),
+      password: 'ef797c8118f02dfb649607dd5d3f8c7623048c9c063d532cc95c5ed7a898a64f',
       bio: 'Lead Developer and Founder of Charcha. Passionate about community building.',
       role: 'admin',
       googleId: null,
@@ -229,7 +228,7 @@ class Database {
         email: 'adminshiva@charcha.com',
         avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop',
         profileImage: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop',
-        password: crypto.createHash('sha256').update('Shiva@123').digest('hex'),
+        password: 'ef797c8118f02dfb649607dd5d3f8c7623048c9c063d532cc95c5ed7a898a64f',
         bio: 'Lead Developer and Founder of Charcha. Passionate about community building.',
         role: 'admin',
         googleId: null,

@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Mail, Lock, UserCheck, Loader2 } from 'lucide-react';
-import axios from 'axios';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, firestoreDb } from '../firebase';
 
 export default function Login() {
   const { login, showToast } = useAuth();
@@ -12,7 +14,6 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
 
   const redirectPath = new URLSearchParams(location.search).get('redirect') || '/';
 
@@ -25,43 +26,50 @@ export default function Login() {
 
     setLoading(true);
     try {
-      const res = await axios.post('/api/auth/login', { email, password });
-      login(res.data.token, res.data.user);
-      
-      // If user is unverified, push to registration OTP verify page!
-      if (!res.data.user.isVerified) {
-        showToast('Please verify your email address to continue.', 'info');
-        navigate('/register?verify=true');
+      // 1. Direct Firebase Auth Sign In
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const firebaseUser = userCredential.user;
+
+      // 2. Fetch respective Firestore user profile document
+      const userDocRef = doc(firestoreDb, 'users', firebaseUser.uid);
+      const userDocSnap = await getDoc(userDocRef);
+
+      let userProfile: any = null;
+      if (userDocSnap.exists()) {
+        userProfile = { _id: firebaseUser.uid, ...userDocSnap.data() };
       } else {
-        navigate(redirectPath);
+        // Fallback default profile if document doesn't exist
+        const emailUsername = email.toLowerCase().split('@')[0];
+        userProfile = {
+          _id: firebaseUser.uid,
+          uid: firebaseUser.uid,
+          name: firebaseUser.displayName || emailUsername,
+          username: emailUsername,
+          email: email.toLowerCase(),
+          avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(email)}`,
+          profileImage: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(email)}`,
+          bio: 'New Charcha member!',
+          role: email.toLowerCase() === 'adminshiva@charcha.com' ? 'admin' : 'user',
+          googleId: null,
+          isVerified: true,
+          isBlocked: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        await setDoc(userDocRef, userProfile);
       }
-    } catch (err: any) {
-      const msg = err.response?.data?.message || 'Login failed. Please check credentials.';
-      showToast(msg, 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
 
-  const handleGoogleLogin = async () => {
-    setGoogleLoading(true);
-    try {
-      // Simulate Google OAuth popup response
-      // Generating a beautiful profile payload matching logged-in user or active metadata
-      const payload = {
-        googleId: 'g-' + Math.random().toString(36).substr(2, 9),
-        email: 'adminshiva@charcha.com', // fallback or metadata email
-        name: 'Shiva Admin',
-        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop'
-      };
+      // 3. Acquire current ID token
+      const idToken = await firebaseUser.getIdToken();
 
-      const res = await axios.post('/api/auth/google', payload);
-      login(res.data.token, res.data.user);
+      // 4. Update frontend context state
+      login(idToken, userProfile);
+      showToast(`Welcome back!`, 'success');
       navigate(redirectPath);
     } catch (err: any) {
-      showToast('Google authentication failed.', 'error');
+      showToast(err.message || 'Login failed. Please check credentials.', 'error');
     } finally {
-      setGoogleLoading(false);
+      setLoading(false);
     }
   };
 

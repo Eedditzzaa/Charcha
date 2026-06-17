@@ -1,5 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
+import { auth, firestoreDb } from '../firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 
 export interface User {
   _id: string;
@@ -89,7 +92,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Logout
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await auth.signOut();
+    } catch (e) {
+      console.error('Firebase signOut error:', e);
+    }
     setToken(null);
     setUser(null);
     setIsAdminMode(false);
@@ -108,25 +116,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const refreshUser = async () => {
-    const savedToken = localStorage.getItem('charcha_token');
-    if (!savedToken) {
-      setLoading(false);
-      return;
-    }
-    try {
-      axios.defaults.headers.common['Authorization'] = `Bearer ${savedToken}`;
-      const res = await axios.get('/api/auth/me');
-      setUser(res.data.user);
-      setToken(savedToken);
-    } catch (err) {
-      console.error('Session refresh failed', err);
-      // Clean stale tokens on verification failure
-      localStorage.removeItem('charcha_token');
-      localStorage.removeItem('charcha_user');
-      setUser(null);
-      setToken(null);
-    } finally {
-      setLoading(false);
+    // Client-side direct Firebase sync, no API route needed
+    const firebaseUser = auth.currentUser;
+    if (firebaseUser) {
+      try {
+        const idToken = await firebaseUser.getIdToken(true);
+        const userDocRef = doc(firestoreDb, 'users', firebaseUser.uid);
+        const userDocSnap = await getDoc(userDocRef);
+        if (userDocSnap.exists()) {
+          const userProfile = { _id: firebaseUser.uid, ...userDocSnap.data() } as User;
+          setUser(userProfile);
+          setToken(idToken);
+          localStorage.setItem('charcha_token', idToken);
+          localStorage.setItem('charcha_user', JSON.stringify(userProfile));
+        }
+      } catch (err) {
+        console.error('Failed to manually refresh user token:', err);
+      }
     }
   };
 
@@ -141,25 +147,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setTheme('dark');
     }
 
-    // 2. Auth initialization
-    const savedToken = localStorage.getItem('charcha_token');
-    const savedUser = localStorage.getItem('charcha_user');
-    if (savedToken && savedUser && savedUser !== 'undefined') {
-      try {
-        setToken(savedToken);
-        setUser(JSON.parse(savedUser));
-        axios.defaults.headers.common['Authorization'] = `Bearer ${savedToken}`;
-      } catch (e) {
-        console.error('Failed to parse saved user from localStorage:', e);
-        localStorage.removeItem('charcha_user');
-        localStorage.removeItem('charcha_token');
+    // 2. Auth initialization using direct Firebase Authentication
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          const idToken = await firebaseUser.getIdToken();
+          const userDocRef = doc(firestoreDb, 'users', firebaseUser.uid);
+          const userDocSnap = await getDoc(userDocRef);
+
+          if (userDocSnap.exists()) {
+            const userProfile = { _id: firebaseUser.uid, ...userDocSnap.data() } as User;
+            setUser(userProfile);
+            setToken(idToken);
+            localStorage.setItem('charcha_token', idToken);
+            localStorage.setItem('charcha_user', JSON.stringify(userProfile));
+            axios.defaults.headers.common['Authorization'] = `Bearer ${idToken}`;
+          } else {
+            // Profile doc doesn't exist yet, wait or construct default
+            const emailUsername = firebaseUser.email?.toLowerCase().split('@')[0] || 'user';
+            const fallbackProfile = {
+              _id: firebaseUser.uid,
+              uid: firebaseUser.uid,
+              name: firebaseUser.displayName || emailUsername,
+              username: emailUsername,
+              email: firebaseUser.email || '',
+              avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(firebaseUser.email || '')}`,
+              profileImage: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(firebaseUser.email || '')}`,
+              bio: 'New Charcha member!',
+              role: (firebaseUser.email?.toLowerCase() === 'adminshiva@charcha.com' ? 'admin' : 'user') as 'admin' | 'user',
+              googleId: null,
+              isVerified: true,
+              isBlocked: false,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            } as any;
+            setUser(fallbackProfile);
+            setToken(idToken);
+            localStorage.setItem('charcha_token', idToken);
+            localStorage.setItem('charcha_user', JSON.stringify(fallbackProfile));
+            axios.defaults.headers.common['Authorization'] = `Bearer ${idToken}`;
+          }
+        } catch (err) {
+          console.error('Failed to load user profile from Firestore:', err);
+        }
+      } else {
         setUser(null);
         setToken(null);
+        localStorage.removeItem('charcha_token');
+        localStorage.removeItem('charcha_user');
+        delete axios.defaults.headers.common['Authorization'];
       }
-    }
-    
-    // Call verification API to double check session freshness
-    refreshUser();
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
   // Sync theme changes with body element selectors
