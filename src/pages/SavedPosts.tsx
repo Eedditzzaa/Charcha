@@ -135,8 +135,8 @@ export default function SavedPosts() {
 
               <div className="p-5 pt-0 border-t border-black/5 dark:border-[#4B4B4B]/30 flex items-center justify-between mt-auto">
                 <div className="flex items-center gap-1.5">
-                  <img src={post.author?.avatar} alt={post.author?.name} className="h-6 w-6 rounded-full border border-charcha-purple" />
-                  <span className="text-[11px] font-semibold text-[#444D60]/90 dark:text-[#BFBFBF]">{post.author?.name.split(' ')[0]}</span>
+                  <img src={post.author?.avatar || 'https://api.dicebear.com/7.x/bottts/svg?seed=Anonymous'} alt={post.author?.name || 'Anonymous'} className="h-6 w-6 rounded-full border border-charcha-purple" />
+                  <span className="text-[11px] font-semibold text-[#444D60]/90 dark:text-[#BFBFBF]">{(post.author?.name || 'Anonymous').split(' ')[0]}</span>
                 </div>
 
                 <div className="flex gap-2.5 text-xs text-[#444D60]/60 dark:text-[#7D7D7D] font-mono">

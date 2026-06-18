@@ -256,14 +256,14 @@ export default function SingleBlog() {
           {/* Author info detail */}
           <div className="flex items-center gap-3.5 p-4 border border-black/5 dark:border-[#4B4B4B] rounded-2xl bg-[#A0D2EB]/15 dark:bg-zinc-900/30">
             <img
-              src={post.author?.avatar}
-              alt={post.author?.name}
+              src={post.author?.avatar || 'https://api.dicebear.com/7.x/bottts/svg?seed=Anonymous'}
+              alt={post.author?.name || 'Anonymous'}
               className="h-11 w-11 rounded-full border-2 border-[#9D6DD6]"
             />
             <div>
               <div className="text-sm font-bold text-[#444D60] dark:text-white flex items-center gap-1">
                 <User className="h-3.5 w-3.5 text-charcha-purple" />
-                {post.author?.name}
+                {post.author?.name || 'Anonymous'}
               </div>
               <p className="text-xs text-[#444D60]/80 dark:text-[#7D7D7D] line-clamp-1 italic mt-0.5">
                 {post.author?.bio || 'Charcha creator & contributor.'}
@@ -369,17 +369,17 @@ export default function SingleBlog() {
                   className="flex gap-3.5 p-4 rounded-2xl border border-black/5 dark:border-zinc-800/80 bg-white/40 dark:bg-zinc-900/25 transition"
                 >
                   <img
-                    src={comment.user?.avatar}
-                    alt={comment.user?.name}
+                    src={comment.user?.avatar || 'https://api.dicebear.com/7.x/bottts/svg?seed=Anonymous'}
+                    alt={comment.user?.name || 'Anonymous'}
                     className="h-8 w-8 rounded-full border border-charcha-purple"
                   />
                   <div className="flex-grow space-y-1.5">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
                         <span className="text-xs font-bold text-[#444D60] dark:text-white">
-                          {comment.user?.name}
+                          {comment.user?.name || 'Anonymous'}
                         </span>
-                        {comment.user?._id === post.authorId && (
+                        {comment.user?._id && comment.user?._id === post.authorId && (
                           <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-lg bg-[#9D6DD6]/20 text-[#9D6DD6] font-bold">
                             Author
                           </span>

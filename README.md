@@ -1,5 +1,20 @@
-Intern ID : CITS1582
-Fullname : Shiva Bajpai
-No of weeks : 4
-Project name : Charcha (Full-Stack Blog with Auth)
-Project Scope : Charcha is a full-stack blog platform that enables users to create, read, edit, and manage blog posts through a secure authentication system. The platform provides personalized user accounts, interactive features such as comments, likes, and bookmarks, and stores data persistently using Firebase services. It is designed with a responsive and scalable architecture to deliver a seamless experience across devices.
+<div align="center">
+<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
+</div>
+
+# Run and deploy your AI Studio app
+
+This contains everything you need to run your app locally.
+
+View your app in AI Studio: https://ai.studio/apps/7432e671-4425-46b7-8b9b-3ec272ac8353
+
+## Run Locally
+
+**Prerequisites:**  Node.js
+
+
+1. Install dependencies:
+   `npm install`
+2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+3. Run the app:
+   `npm run dev`

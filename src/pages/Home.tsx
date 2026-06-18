@@ -217,11 +217,11 @@ export default function Home() {
                 <div className="p-5 pt-0 border-t border-black/5 dark:border-[#4B4B4B]/40 flex items-center justify-between mt-auto">
                   <div className="flex items-center gap-2">
                     <img
-                      src={post.author?.avatar}
-                      alt={post.author?.name}
+                      src={post.author?.avatar || 'https://api.dicebear.com/7.x/bottts/svg?seed=Anonymous'}
+                      alt={post.author?.name || 'Anonymous'}
                       className="h-7 w-7 rounded-full border border-charcha-purple"
                     />
-                    <span className="text-xs font-semibold text-[#444D60]/90 dark:text-[#BFBFBF]">{post.author?.name.split(' ')[0]}</span>
+                    <span className="text-xs font-semibold text-[#444D60]/90 dark:text-[#BFBFBF]">{(post.author?.name || 'Anonymous').split(' ')[0]}</span>
                   </div>
 
                   <div className="flex gap-3 text-xs text-[#444D60]/70 dark:text-[#7D7D7D] font-mono">

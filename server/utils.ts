@@ -56,7 +56,9 @@ export function verifyToken(token: string): any {
       .replace(/\+/g, '-')
       .replace(/\//g, '_');
 
-    const payloadJson = Buffer.from(encodedPayload, 'base64').toString('utf8');
+    const base64 = encodedPayload.replace(/-/g, '+').replace(/_/g, '/');
+    const padding = '='.repeat((4 - (base64.length % 4)) % 4);
+    const payloadJson = Buffer.from(base64 + padding, 'base64').toString('utf8');
     const data = JSON.parse(payloadJson);
 
     if (signature === expectedSignature) {

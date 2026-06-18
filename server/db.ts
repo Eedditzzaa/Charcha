@@ -128,6 +128,12 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 // ----------------------------------------------------
 class Database {
   private inMemoryVerificationCodes = new Map<string, string>();
+  private fallbackUsers = new Map<string, User>();
+  private fallbackPosts = new Map<string, Post>();
+  private fallbackComments = new Map<string, Comment>();
+  private fallbackLikes = new Map<string, Like>();
+  private fallbackBookmarks = new Map<string, Bookmark>();
+
   private predefinedUsers: Record<string, User> = {
     'u-1': {
       _id: 'u-1',
@@ -200,6 +206,10 @@ class Database {
   };
 
   constructor() {
+    // Prime the fallback databases with predefined users
+    Object.keys(this.predefinedUsers).forEach(id => {
+      this.fallbackUsers.set(id, this.predefinedUsers[id]);
+    });
     this.checkAndSeed();
   }
 
@@ -344,16 +354,20 @@ class Database {
     ];
 
     for (const u of seedUsers) {
-      await setDoc(doc(firestoreDb, 'users', u._id), u);
+      await setDoc(doc(firestoreDb, 'users', u._id), u).catch(() => {});
+      this.fallbackUsers.set(u._id, u);
     }
     for (const p of seedPosts) {
-      await setDoc(doc(firestoreDb, 'posts', p._id), p);
+      await setDoc(doc(firestoreDb, 'posts', p._id), p).catch(() => {});
+      this.fallbackPosts.set(p._id, p);
     }
     for (const c of seedComments) {
-      await setDoc(doc(firestoreDb, 'comments', c._id), c);
+      await setDoc(doc(firestoreDb, 'comments', c._id), c).catch(() => {});
+      this.fallbackComments.set(c._id, c);
     }
     for (const l of seedLikes) {
-      await setDoc(doc(firestoreDb, 'likes', l._id), l);
+      await setDoc(doc(firestoreDb, 'likes', l._id), l).catch(() => {});
+      this.fallbackLikes.set(l._id, l);
     }
 
     console.log('✅ Firestore seeding completed safely!');
@@ -366,9 +380,12 @@ class Database {
     const p = 'users';
     try {
       const snap = await getDocs(collection(firestoreDb, p));
-      return snap.docs.map(d => ({ _id: d.id, ...d.data() } as User));
+      const users = snap.docs.map(d => ({ _id: d.id, ...d.data() } as User));
+      users.forEach(u => this.fallbackUsers.set(u._id, u));
+      return users;
     } catch (error) {
-      handleFirestoreError(error, OperationType.GET, p);
+      console.warn('⚠️ getUsers falling back to in-memory store:', error);
+      return Array.from(this.fallbackUsers.values());
     }
   }
 
@@ -379,10 +396,15 @@ class Database {
     const p = `users/${id}`;
     try {
       const snap = await getDoc(doc(firestoreDb, 'users', id));
-      if (!snap.exists()) return undefined;
-      return { _id: snap.id, ...snap.data() } as User;
+      if (!snap.exists()) {
+        return this.fallbackUsers.get(id);
+      }
+      const user = { _id: snap.id, ...snap.data() } as User;
+      this.fallbackUsers.set(id, user);
+      return user;
     } catch (error) {
-      handleFirestoreError(error, OperationType.GET, p);
+      console.warn(`⚠️ getUserById(${id}) falling back to in-memory store:`, error);
+      return this.fallbackUsers.get(id);
     }
   }
 
@@ -396,11 +418,16 @@ class Database {
     try {
       const q = query(collection(firestoreDb, 'users'), where('email', '==', cleanEmail));
       const snap = await getDocs(q);
-      if (snap.empty) return undefined;
+      if (snap.empty) {
+        return Array.from(this.fallbackUsers.values()).find(u => u.email.toLowerCase() === cleanEmail);
+      }
       const d = snap.docs[0];
-      return { _id: d.id, ...d.data() } as User;
+      const user = { _id: d.id, ...d.data() } as User;
+      this.fallbackUsers.set(user._id, user);
+      return user;
     } catch (error) {
-      handleFirestoreError(error, OperationType.GET, p + '?email=' + email);
+      console.warn(`⚠️ getUserByEmail(${email}) falling back to in-memory store:`, error);
+      return Array.from(this.fallbackUsers.values()).find(u => u.email.toLowerCase() === cleanEmail);
     }
   }
 
@@ -409,46 +436,60 @@ class Database {
     try {
       const q = query(collection(firestoreDb, 'users'), where('googleId', '==', googleId));
       const snap = await getDocs(q);
-      if (snap.empty) return undefined;
+      if (snap.empty) {
+        return Array.from(this.fallbackUsers.values()).find(u => u.googleId === googleId);
+      }
       const d = snap.docs[0];
-      return { _id: d.id, ...d.data() } as User;
+      const user = { _id: d.id, ...d.data() } as User;
+      this.fallbackUsers.set(user._id, user);
+      return user;
     } catch (error) {
-      handleFirestoreError(error, OperationType.GET, p + '?googleId=' + googleId);
+      console.warn(`⚠️ getUserByGoogleId(${googleId}) falling back to in-memory store:`, error);
+      return Array.from(this.fallbackUsers.values()).find(u => u.googleId === googleId);
     }
   }
 
   async createUser(user: Omit<User, '_id' | 'createdAt' | 'updatedAt' | 'uid' | 'profileImage' | 'username'>): Promise<User> {
     const p = 'users';
+    const now = new Date().toISOString();
+    const nextId = 'u-' + Math.random().toString(36).substr(2, 9);
+    const emailUsername = user.email.toLowerCase().split('@')[0];
+    const newUser: User = {
+      ...user,
+      _id: nextId,
+      uid: nextId,
+      username: emailUsername,
+      avatar: user.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(user.name)}`,
+      profileImage: user.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(user.name)}`,
+      email: user.email.toLowerCase(),
+      createdAt: now,
+      updatedAt: now,
+    };
     try {
-      const now = new Date().toISOString();
-      const nextId = 'u-' + Math.random().toString(36).substr(2, 9);
-      const emailUsername = user.email.toLowerCase().split('@')[0];
-      const newUser: User = {
-        ...user,
-        _id: nextId,
-        uid: nextId,
-        username: emailUsername,
-        avatar: user.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(user.name)}`,
-        profileImage: user.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(user.name)}`,
-        email: user.email.toLowerCase(),
-        createdAt: now,
-        updatedAt: now,
-      };
       await setDoc(doc(firestoreDb, 'users', nextId), newUser);
+      this.fallbackUsers.set(nextId, newUser);
       return newUser;
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, p);
+      console.warn('⚠️ createUser falling back to in-memory store:', error);
+      this.fallbackUsers.set(nextId, newUser);
+      return newUser;
     }
   }
 
   async updateUser(id: string, updates: Partial<User>): Promise<User | undefined> {
     const p = `users/${id}`;
+    const now = new Date().toISOString();
     try {
       const userRef = doc(firestoreDb, 'users', id);
       const snap = await getDoc(userRef);
-      if (!snap.exists()) return undefined;
+      if (!snap.exists()) {
+        const local = this.fallbackUsers.get(id);
+        if (!local) return undefined;
+        const updated = { ...local, ...updates, updatedAt: now };
+        this.fallbackUsers.set(id, updated);
+        return updated;
+      }
       
-      const now = new Date().toISOString();
       const dataToSave: Partial<User> = { ...updates, updatedAt: now };
       if (updates.avatar) {
         dataToSave.profileImage = updates.avatar;
@@ -456,9 +497,16 @@ class Database {
       await updateDoc(userRef, dataToSave);
       
       const refreshedSnap = await getDoc(userRef);
-      return { _id: refreshedSnap.id, ...refreshedSnap.data() } as User;
+      const updated = { _id: refreshedSnap.id, ...refreshedSnap.data() } as User;
+      this.fallbackUsers.set(id, updated);
+      return updated;
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, p);
+      console.warn(`⚠️ updateUser(${id}) falling back to in-memory store:`, error);
+      const local = this.fallbackUsers.get(id);
+      if (!local) return undefined;
+      const updated = { ...local, ...updates, updatedAt: now };
+      this.fallbackUsers.set(id, updated);
+      return updated;
     }
   }
 
@@ -467,38 +515,66 @@ class Database {
     try {
       const userRef = doc(firestoreDb, 'users', id);
       const snap = await getDoc(userRef);
-      if (!snap.exists()) return false;
+      if (!snap.exists()) {
+        const existed = this.fallbackUsers.has(id);
+        this.fallbackUsers.delete(id);
+        return existed;
+      }
       
       await deleteDoc(userRef);
       
       // Cascade delete user's posts, comments, likes, bookmarks
       const postsQ = query(collection(firestoreDb, 'posts'), where('authorId', '==', id));
-      const postsSnap = await getDocs(postsQ);
-      for (const d of postsSnap.docs) {
-        await deleteDoc(d.ref);
+      const postsSnap = await getDocs(postsQ).catch(() => ({ docs: [] }));
+      for (const d of (postsSnap as any).docs) {
+        await deleteDoc(d.ref).catch(() => {});
       }
       
       const commentsQ = query(collection(firestoreDb, 'comments'), where('userId', '==', id));
-      const commentsSnap = await getDocs(commentsQ);
-      for (const d of commentsSnap.docs) {
-        await deleteDoc(d.ref);
+      const commentsSnap = await getDocs(commentsQ).catch(() => ({ docs: [] }));
+      for (const d of (commentsSnap as any).docs) {
+        await deleteDoc(d.ref).catch(() => {});
       }
       
       const likesQ = query(collection(firestoreDb, 'likes'), where('userId', '==', id));
-      const likesSnap = await getDocs(likesQ);
-      for (const d of likesSnap.docs) {
-        await deleteDoc(d.ref);
+      const likesSnap = await getDocs(likesQ).catch(() => ({ docs: [] }));
+      for (const d of (likesSnap as any).docs) {
+        await deleteDoc(d.ref).catch(() => {});
       }
       
       const bookmarksQ = query(collection(firestoreDb, 'bookmarks'), where('userId', '==', id));
-      const bookmarksSnap = await getDocs(bookmarksQ);
-      for (const d of bookmarksSnap.docs) {
-        await deleteDoc(d.ref);
+      const bookmarksSnap = await getDocs(bookmarksQ).catch(() => ({ docs: [] }));
+      for (const d of (bookmarksSnap as any).docs) {
+        await deleteDoc(d.ref).catch(() => {});
       }
+      
+      this.fallbackUsers.delete(id);
+      // Clean up local cascading too
+      Array.from(this.fallbackPosts.values()).forEach(p => {
+        if (p.authorId === id) this.fallbackPosts.delete(p._id);
+      });
+      Array.from(this.fallbackComments.values()).forEach(c => {
+        if (c.userId === id) this.fallbackComments.delete(c._id);
+      });
+      Array.from(this.fallbackLikes.values()).forEach(l => {
+        if (l.userId === id) this.fallbackLikes.delete(l._id);
+      });
       
       return true;
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, p);
+      console.warn(`⚠️ deleteUser(${id}) falling back to in-memory store:`, error);
+      const existed = this.fallbackUsers.has(id);
+      this.fallbackUsers.delete(id);
+      Array.from(this.fallbackPosts.values()).forEach(p => {
+        if (p.authorId === id) this.fallbackPosts.delete(p._id);
+      });
+      Array.from(this.fallbackComments.values()).forEach(c => {
+        if (c.userId === id) this.fallbackComments.delete(c._id);
+      });
+      Array.from(this.fallbackLikes.values()).forEach(l => {
+        if (l.userId === id) this.fallbackLikes.delete(l._id);
+      });
+      return existed;
     }
   }
 
@@ -509,9 +585,12 @@ class Database {
     const p = 'posts';
     try {
       const snap = await getDocs(collection(firestoreDb, 'posts'));
-      return snap.docs.map(d => ({ _id: d.id, ...d.data() } as Post));
+      const posts = snap.docs.map(d => ({ _id: d.id, ...d.data() } as Post));
+      posts.forEach(post => this.fallbackPosts.set(post._id, post));
+      return posts;
     } catch (error) {
-      handleFirestoreError(error, OperationType.GET, p);
+      console.warn('⚠️ getPosts falling back to in-memory store:', error);
+      return Array.from(this.fallbackPosts.values());
     }
   }
 
@@ -519,10 +598,15 @@ class Database {
     const p = `posts/${id}`;
     try {
       const snap = await getDoc(doc(firestoreDb, 'posts', id));
-      if (!snap.exists()) return undefined;
-      return { _id: snap.id, ...snap.data() } as Post;
+      if (!snap.exists()) {
+        return this.fallbackPosts.get(id);
+      }
+      const post = { _id: snap.id, ...snap.data() } as Post;
+      this.fallbackPosts.set(id, post);
+      return post;
     } catch (error) {
-      handleFirestoreError(error, OperationType.GET, p);
+      console.warn(`⚠️ getPostById(${id}) falling back to in-memory store:`, error);
+      return this.fallbackPosts.get(id);
     }
   }
 
@@ -531,52 +615,72 @@ class Database {
     try {
       const q = query(collection(firestoreDb, 'posts'), where('slug', '==', slug));
       const snap = await getDocs(q);
-      if (snap.empty) return undefined;
+      if (snap.empty) {
+        return Array.from(this.fallbackPosts.values()).find(p => p.slug === slug);
+      }
       const d = snap.docs[0];
-      return { _id: d.id, ...d.data() } as Post;
+      const post = { _id: d.id, ...d.data() } as Post;
+      this.fallbackPosts.set(post._id, post);
+      return post;
     } catch (error) {
-      handleFirestoreError(error, OperationType.GET, p + '?slug=' + slug);
+      console.warn(`⚠️ getPostBySlug(${slug}) falling back to in-memory store:`, error);
+      return Array.from(this.fallbackPosts.values()).find(p => p.slug === slug);
     }
   }
 
   async createPost(post: Omit<Post, '_id' | 'likesCount' | 'commentsCount' | 'createdAt' | 'updatedAt' | 'coverImage' | 'authorName' | 'category' | 'tags'> & { category?: string; tags?: string[] }): Promise<Post> {
     const p = 'posts';
+    const now = new Date().toISOString();
+    const nextId = 'p-' + Math.random().toString(36).substr(2, 9);
+    
+    // Check local fallback user first
+    const localAuthor = this.fallbackUsers.get(post.authorId);
+    let authorName = localAuthor ? localAuthor.name : 'Charcha Author';
+    
+    const newPost: Post = {
+      ...post,
+      _id: nextId,
+      authorName,
+      featuredImage: post.featuredImage || 'https://images.unsplash.com/photo-1499750310107-5fef28a66643?q=80&w=800&auto=format&fit=crop',
+      coverImage: post.featuredImage || 'https://images.unsplash.com/photo-1499750310107-5fef28a66643?q=80&w=800&auto=format&fit=crop',
+      likesCount: 0,
+      commentsCount: 0,
+      category: (post as any).category || 'General',
+      tags: (post as any).tags || ['charcha'],
+      status: post.status || 'published',
+      createdAt: now,
+      updatedAt: now,
+    };
+
     try {
-      const now = new Date().toISOString();
-      const nextId = 'p-' + Math.random().toString(36).substr(2, 9);
-      
-      const authorDoc = await getDoc(doc(firestoreDb, 'users', post.authorId));
-      const authorName = authorDoc.exists() ? (authorDoc.data()?.name || 'Charcha Author') : 'Charcha Author';
-      
-      const newPost: Post = {
-        ...post,
-        _id: nextId,
-        authorName,
-        featuredImage: post.featuredImage || 'https://images.unsplash.com/photo-1499750310107-5fef28a66643?q=80&w=800&auto=format&fit=crop',
-        coverImage: post.featuredImage || 'https://images.unsplash.com/photo-1499750310107-5fef28a66643?q=80&w=800&auto=format&fit=crop',
-        likesCount: 0,
-        commentsCount: 0,
-        category: (post as any).category || 'General',
-        tags: (post as any).tags || ['charcha'],
-        status: post.status || 'published',
-        createdAt: now,
-        updatedAt: now,
-      };
+      const authorDoc = await getDoc(doc(firestoreDb, 'users', post.authorId)).catch(() => null);
+      if (authorDoc && authorDoc.exists()) {
+        newPost.authorName = authorDoc.data()?.name || authorName;
+      }
       await setDoc(doc(firestoreDb, 'posts', nextId), newPost);
+      this.fallbackPosts.set(nextId, newPost);
       return newPost;
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, p);
+      console.warn('⚠️ createPost falling back to in-memory store:', error);
+      this.fallbackPosts.set(nextId, newPost);
+      return newPost;
     }
   }
 
   async updatePost(id: string, updates: Partial<Post>): Promise<Post | undefined> {
     const p = `posts/${id}`;
+    const now = new Date().toISOString();
     try {
       const postRef = doc(firestoreDb, 'posts', id);
       const snap = await getDoc(postRef);
-      if (!snap.exists()) return undefined;
+      if (!snap.exists()) {
+        const local = this.fallbackPosts.get(id);
+        if (!local) return undefined;
+        const updated = { ...local, ...updates, updatedAt: now };
+        this.fallbackPosts.set(id, updated);
+        return updated;
+      }
       
-      const now = new Date().toISOString();
       const dataToSave: Partial<Post> = { ...updates, updatedAt: now };
       if (updates.featuredImage) {
         dataToSave.coverImage = updates.featuredImage;
@@ -584,9 +688,16 @@ class Database {
       await updateDoc(postRef, dataToSave);
       
       const refreshedSnap = await getDoc(postRef);
-      return { _id: refreshedSnap.id, ...refreshedSnap.data() } as Post;
+      const updated = { _id: refreshedSnap.id, ...refreshedSnap.data() } as Post;
+      this.fallbackPosts.set(id, updated);
+      return updated;
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, p);
+      console.warn(`⚠️ updatePost(${id}) falling back to in-memory store:`, error);
+      const local = this.fallbackPosts.get(id);
+      if (!local) return undefined;
+      const updated = { ...local, ...updates, updatedAt: now };
+      this.fallbackPosts.set(id, updated);
+      return updated;
     }
   }
 
@@ -595,32 +706,54 @@ class Database {
     try {
       const postRef = doc(firestoreDb, 'posts', id);
       const snap = await getDoc(postRef);
-      if (!snap.exists()) return false;
+      if (!snap.exists()) {
+        const existed = this.fallbackPosts.has(id);
+        this.fallbackPosts.delete(id);
+        return existed;
+      }
       
       await deleteDoc(postRef);
       
       // Cascade-delete related comments, likes, and bookmarks
       const commentsQ = query(collection(firestoreDb, 'comments'), where('postId', '==', id));
-      const commentsSnap = await getDocs(commentsQ);
-      for (const d of commentsSnap.docs) {
-        await deleteDoc(d.ref);
+      const commentsSnap = await getDocs(commentsQ).catch(() => ({ docs: [] }));
+      for (const d of (commentsSnap as any).docs) {
+        await deleteDoc(d.ref).catch(() => {});
       }
       
       const likesQ = query(collection(firestoreDb, 'likes'), where('postId', '==', id));
-      const likesSnap = await getDocs(likesQ);
-      for (const d of likesSnap.docs) {
-        await deleteDoc(d.ref);
+      const likesSnap = await getDocs(likesQ).catch(() => ({ docs: [] }));
+      for (const d of (likesSnap as any).docs) {
+        await deleteDoc(d.ref).catch(() => {});
       }
       
       const bookmarksQ = query(collection(firestoreDb, 'bookmarks'), where('postId', '==', id));
-      const bookmarksSnap = await getDocs(bookmarksQ);
-      for (const d of bookmarksSnap.docs) {
-        await deleteDoc(d.ref);
+      const bookmarksSnap = await getDocs(bookmarksQ).catch(() => ({ docs: [] }));
+      for (const d of (bookmarksSnap as any).docs) {
+        await deleteDoc(d.ref).catch(() => {});
       }
       
+      this.fallbackPosts.delete(id);
+      // Cascade clean up local too
+      Array.from(this.fallbackComments.values()).forEach(c => {
+        if (c.postId === id) this.fallbackComments.delete(c._id);
+      });
+      Array.from(this.fallbackLikes.values()).forEach(l => {
+        if (l.postId === id) this.fallbackLikes.delete(l._id);
+      });
       return true;
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, p);
+      console.warn(`⚠️ deletePost(${id}) falling back to in-memory store:`, error);
+      const existed = this.fallbackPosts.has(id);
+      this.fallbackPosts.delete(id);
+      // Cascade clean up local too
+      Array.from(this.fallbackComments.values()).forEach(c => {
+        if (c.postId === id) this.fallbackComments.delete(c._id);
+      });
+      Array.from(this.fallbackLikes.values()).forEach(l => {
+        if (l.postId === id) this.fallbackLikes.delete(l._id);
+      });
+      return existed;
     }
   }
 
@@ -631,9 +764,12 @@ class Database {
     const p = 'comments';
     try {
       const snap = await getDocs(collection(firestoreDb, p));
-      return snap.docs.map(d => ({ _id: d.id, ...d.data() } as Comment));
+      const comments = snap.docs.map(d => ({ _id: d.id, ...d.data() } as Comment));
+      comments.forEach(c => this.fallbackComments.set(c._id, c));
+      return comments;
     } catch (error) {
-      handleFirestoreError(error, OperationType.GET, p);
+      console.warn('⚠️ getComments falling back to in-memory store:', error);
+      return Array.from(this.fallbackComments.values());
     }
   }
 
@@ -641,10 +777,15 @@ class Database {
     const p = `comments/${id}`;
     try {
       const snap = await getDoc(doc(firestoreDb, 'comments', id));
-      if (!snap.exists()) return undefined;
-      return { _id: snap.id, ...snap.data() } as Comment;
+      if (!snap.exists()) {
+        return this.fallbackComments.get(id);
+      }
+      const comment = { _id: snap.id, ...snap.data() } as Comment;
+      this.fallbackComments.set(id, comment);
+      return comment;
     } catch (error) {
-      handleFirestoreError(error, OperationType.GET, p);
+      console.warn(`⚠️ getCommentById(${id}) falling back to in-memory store:`, error);
+      return this.fallbackComments.get(id);
     }
   }
 
@@ -653,42 +794,62 @@ class Database {
     try {
       const q = query(collection(firestoreDb, 'comments'), where('postId', '==', postId));
       const snap = await getDocs(q);
-      return snap.docs.map(d => ({ _id: d.id, ...d.data() } as Comment));
+      const comments = snap.docs.map(d => ({ _id: d.id, ...d.data() } as Comment));
+      comments.forEach(c => this.fallbackComments.set(c._id, c));
+      return comments;
     } catch (error) {
-      handleFirestoreError(error, OperationType.GET, p + '?postId=' + postId);
+      console.warn(`⚠️ getCommentsByPostId(${postId}) falling back to in-memory store:`, error);
+      return Array.from(this.fallbackComments.values()).filter(c => c.postId === postId);
     }
   }
 
   async createComment(postId: string, userId: string, content: string): Promise<Comment> {
     const p = 'comments';
+    const now = new Date().toISOString();
+    const nextId = 'c-' + Math.random().toString(36).substr(2, 9);
+    
+    const localUser = this.fallbackUsers.get(userId);
+    let userName = localUser ? localUser.name : 'Charcha Reader';
+    
+    const comment: Comment = {
+      _id: nextId,
+      postId,
+      userId,
+      userName,
+      content,
+      createdAt: now,
+    };
+
     try {
-      const now = new Date().toISOString();
-      const nextId = 'c-' + Math.random().toString(36).substr(2, 9);
-      
-      const userDoc = await getDoc(doc(firestoreDb, 'users', userId));
-      const userName = userDoc.exists() ? (userDoc.data()?.name || 'Charcha Reader') : 'Charcha Reader';
-      
-      const comment: Comment = {
-        _id: nextId,
-        postId,
-        userId,
-        userName,
-        content,
-        createdAt: now,
-      };
+      const userDoc = await getDoc(doc(firestoreDb, 'users', userId)).catch(() => null);
+      if (userDoc && userDoc.exists()) {
+        comment.userName = userDoc.data()?.name || userName;
+      }
       await setDoc(doc(firestoreDb, 'comments', nextId), comment);
+      this.fallbackComments.set(nextId, comment);
       
       // Increment commentsCount for post
       const postRef = doc(firestoreDb, 'posts', postId);
       const postSnap = await getDoc(postRef);
       if (postSnap.exists()) {
         const currentCount = postSnap.data()?.commentsCount || 0;
-        await updateDoc(postRef, { commentsCount: currentCount + 1 });
+        await updateDoc(postRef, { commentsCount: currentCount + 1 }).catch(() => {});
       }
       
+      const postLocal = this.fallbackPosts.get(postId);
+      if (postLocal) {
+        postLocal.commentsCount = (postLocal.commentsCount || 0) + 1;
+      }
+
       return comment;
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, p);
+      console.warn('⚠️ createComment falling back to in-memory store:', error);
+      this.fallbackComments.set(nextId, comment);
+      const postLocal = this.fallbackPosts.get(postId);
+      if (postLocal) {
+        postLocal.commentsCount = (postLocal.commentsCount || 0) + 1;
+      }
+      return comment;
     }
   }
 
@@ -697,14 +858,25 @@ class Database {
     try {
       const commentRef = doc(firestoreDb, 'comments', id);
       const snap = await getDoc(commentRef);
-      if (!snap.exists()) return undefined;
+      if (!snap.exists()) {
+        const local = this.fallbackComments.get(id);
+        if (!local) return undefined;
+        local.content = content;
+        return local;
+      }
       
       await updateDoc(commentRef, { content });
       
       const refreshedSnap = await getDoc(commentRef);
-      return { _id: refreshedSnap.id, ...refreshedSnap.data() } as Comment;
+      const comment = { _id: refreshedSnap.id, ...refreshedSnap.data() } as Comment;
+      this.fallbackComments.set(id, comment);
+      return comment;
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, p);
+      console.warn(`⚠️ updateComment(${id}) falling back to in-memory store:`, error);
+      const local = this.fallbackComments.get(id);
+      if (!local) return undefined;
+      local.content = content;
+      return local;
     }
   }
 
@@ -713,7 +885,16 @@ class Database {
     try {
       const commentRef = doc(firestoreDb, 'comments', id);
       const snap = await getDoc(commentRef);
-      if (!snap.exists()) return false;
+      if (!snap.exists()) {
+        const local = this.fallbackComments.get(id);
+        if (!local) return false;
+        this.fallbackComments.delete(id);
+        const postLocal = this.fallbackPosts.get(local.postId);
+        if (postLocal) {
+          postLocal.commentsCount = Math.max(0, (postLocal.commentsCount || 0) - 1);
+        }
+        return true;
+      }
       
       const commentData = snap.data() as Comment;
       await deleteDoc(commentRef);
@@ -723,12 +904,25 @@ class Database {
       const postSnap = await getDoc(postRef);
       if (postSnap.exists()) {
         const currentCount = postSnap.data()?.commentsCount || 0;
-        await updateDoc(postRef, { commentsCount: Math.max(0, currentCount - 1) });
+        await updateDoc(postRef, { commentsCount: Math.max(0, currentCount - 1) }).catch(() => {});
       }
       
+      this.fallbackComments.delete(id);
+      const postLocal = this.fallbackPosts.get(commentData.postId);
+      if (postLocal) {
+        postLocal.commentsCount = Math.max(0, (postLocal.commentsCount || 0) - 1);
+      }
       return true;
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, p);
+      console.warn(`⚠️ deleteComment(${id}) falling back to in-memory store:`, error);
+      const local = this.fallbackComments.get(id);
+      if (!local) return false;
+      this.fallbackComments.delete(id);
+      const postLocal = this.fallbackPosts.get(local.postId);
+      if (postLocal) {
+        postLocal.commentsCount = Math.max(0, (postLocal.commentsCount || 0) - 1);
+      }
+      return true;
     }
   }
 
@@ -748,6 +942,8 @@ class Database {
       
       if (!snap.empty) {
         await deleteDoc(snap.docs[0].ref);
+        const likeId = snap.docs[0].id;
+        this.fallbackLikes.delete(likeId);
       } else {
         const nextId = 'l-' + Math.random().toString(36).substr(2, 9);
         await setDoc(doc(firestoreDb, 'likes', nextId), {
@@ -755,23 +951,48 @@ class Database {
           postId,
           userId,
         });
+        this.fallbackLikes.set(nextId, { _id: nextId, postId, userId });
         liked = true;
       }
       
-      // Calculate current size of likes
       const countQ = query(collection(firestoreDb, 'likes'), where('postId', '==', postId));
       const countSnap = await getDocs(countQ);
       const likesCount = countSnap.size;
       
+      // Sync local counts
+      const localLikes = Array.from(this.fallbackLikes.values()).filter(l => l.postId === postId);
+      const finalCount = countSnap.empty ? localLikes.length : likesCount;
+
       const postRef = doc(firestoreDb, 'posts', postId);
       const postSnap = await getDoc(postRef);
       if (postSnap.exists()) {
-        await updateDoc(postRef, { likesCount });
+        await updateDoc(postRef, { likesCount: finalCount }).catch(() => {});
       }
       
-      return { liked, count: likesCount };
+      const postLocal = this.fallbackPosts.get(postId);
+      if (postLocal) {
+        postLocal.likesCount = finalCount;
+      }
+      
+      return { liked, count: finalCount };
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, p);
+      console.warn(`⚠️ toggleLike(${postId}, ${userId}) falling back to in-memory store:`, error);
+      const existing = Array.from(this.fallbackLikes.values()).find(l => l.postId === postId && l.userId === userId);
+      let liked = false;
+      if (existing) {
+        this.fallbackLikes.delete(existing._id);
+      } else {
+        const nextId = 'l-' + Math.random().toString(36).substr(2, 9);
+        this.fallbackLikes.set(nextId, { _id: nextId, postId, userId });
+        liked = true;
+      }
+      
+      const finalCount = Array.from(this.fallbackLikes.values()).filter(l => l.postId === postId).length;
+      const postLocal = this.fallbackPosts.get(postId);
+      if (postLocal) {
+        postLocal.likesCount = finalCount;
+      }
+      return { liked, count: finalCount };
     }
   }
 
@@ -783,9 +1004,12 @@ class Database {
         where('userId', '==', userId)
       );
       const snap = await getDocs(q);
-      return !snap.empty;
+      if (snap.empty) {
+        return Array.from(this.fallbackLikes.values()).some(l => l.postId === postId && l.userId === userId);
+      }
+      return true;
     } catch (error) {
-      return false;
+      return Array.from(this.fallbackLikes.values()).some(l => l.postId === postId && l.userId === userId);
     }
   }
 
@@ -794,6 +1018,13 @@ class Database {
   // ----------------------------------------------------
   async addBookmark(postId: string, userId: string): Promise<Bookmark> {
     const p = 'bookmarks';
+    const nextId = 'b-' + Math.random().toString(36).substr(2, 9);
+    const b: Bookmark = {
+      _id: nextId,
+      userId,
+      postId,
+      savedAt: new Date().toISOString()
+    };
     try {
       const q = query(
         collection(firestoreDb, 'bookmarks'), 
@@ -803,20 +1034,20 @@ class Database {
       const snap = await getDocs(q);
       
       if (!snap.empty) {
-        return { _id: snap.docs[0].id, ...snap.docs[0].data() } as Bookmark;
+        const existing = { _id: snap.docs[0].id, ...snap.docs[0].data() } as Bookmark;
+        this.fallbackBookmarks.set(existing._id, existing);
+        return existing;
       }
       
-      const nextId = 'b-' + Math.random().toString(36).substr(2, 9);
-      const b: Bookmark = {
-        _id: nextId,
-        userId,
-        postId,
-        savedAt: new Date().toISOString()
-      };
       await setDoc(doc(firestoreDb, 'bookmarks', nextId), b);
+      this.fallbackBookmarks.set(nextId, b);
       return b;
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, p);
+      console.warn(`⚠️ addBookmark(${postId}, ${userId}) falling back to in-memory store:`, error);
+      const existing = Array.from(this.fallbackBookmarks.values()).find(bm => bm.postId === postId && bm.userId === userId);
+      if (existing) return existing;
+      this.fallbackBookmarks.set(nextId, b);
+      return b;
     }
   }
 
@@ -829,12 +1060,23 @@ class Database {
         where('userId', '==', userId)
       );
       const snap = await getDocs(q);
-      if (snap.empty) return false;
+      if (snap.empty) {
+        const local = Array.from(this.fallbackBookmarks.values()).find(bm => bm.postId === postId && bm.userId === userId);
+        if (!local) return false;
+        this.fallbackBookmarks.delete(local._id);
+        return true;
+      }
       
       await deleteDoc(snap.docs[0].ref);
+      const bId = snap.docs[0].id;
+      this.fallbackBookmarks.delete(bId);
       return true;
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, p);
+      console.warn(`⚠️ removeBookmark(${postId}, ${userId}) falling back to in-memory store:`, error);
+      const local = Array.from(this.fallbackBookmarks.values()).find(bm => bm.postId === postId && bm.userId === userId);
+      if (!local) return false;
+      this.fallbackBookmarks.delete(local._id);
+      return true;
     }
   }
 
@@ -843,9 +1085,12 @@ class Database {
     try {
       const q = query(collection(firestoreDb, 'bookmarks'), where('userId', '==', userId));
       const snap = await getDocs(q);
-      return snap.docs.map(d => ({ _id: d.id, ...d.data() } as Bookmark));
+      const bookmarks = snap.docs.map(d => ({ _id: d.id, ...d.data() } as Bookmark));
+      bookmarks.forEach(bm => this.fallbackBookmarks.set(bm._id, bm));
+      return bookmarks;
     } catch (error) {
-      handleFirestoreError(error, OperationType.GET, p + '?userId=' + userId);
+      console.warn(`⚠️ getBookmarksByUserId(${userId}) falling back to in-memory:`, error);
+      return Array.from(this.fallbackBookmarks.values()).filter(bm => bm.userId === userId);
     }
   }
 
@@ -857,9 +1102,12 @@ class Database {
         where('userId', '==', userId)
       );
       const snap = await getDocs(q);
-      return !snap.empty;
+      if (snap.empty) {
+        return Array.from(this.fallbackBookmarks.values()).some(bm => bm.postId === postId && bm.userId === userId);
+      }
+      return true;
     } catch (error) {
-      return false;
+      return Array.from(this.fallbackBookmarks.values()).some(bm => bm.postId === postId && bm.userId === userId);
     }
   }
 
